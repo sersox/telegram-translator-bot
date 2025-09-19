@@ -1,4 +1,15 @@
-import logging
+from flask import Flask
+import threading
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+# Ваш существующий код бота...
+# TOKEN = os.environ.get('BOT_TOKEN')  # Используйте переменные окружения
+# ADMIN_ID = int(os.environ.get('ADMIN_ID'))import logging
 import os
 from dotenv import load_dotenv
 from deep_translator import GoogleTranslator
