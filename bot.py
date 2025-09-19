@@ -1,33 +1,19 @@
+import os
+import asyncio
 from flask import Flask
-import threading
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update
+from deep_translator import GoogleTranslator
 
+# Инициализация Flask приложения
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-# Ваш существующий код бота...
-# TOKEN = os.environ.get('BOT_TOKEN')  # Используйте переменные окружения
-# ADMIN_ID = int(os.environ.get('ADMIN_ID'))import logging
-import os
-from dotenv import load_dotenv
-from deep_translator import GoogleTranslator
-from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
-)
-
 # Загрузка конфигурации
-load_dotenv("config.env")
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+TOKEN = os.environ.get('BOT_TOKEN')
+ADMIN_ID = int(os.environ.get('ADMIN_ID'))
 
 # Настройка логирования
+import logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
     level=logging.INFO
@@ -46,7 +32,10 @@ def translate_text(text):
         logger.error(f"Ошибка перевода: {e}")
         return None
 
-# Обработчик сообщений
+# Обработчики команд и сообщений
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Бот работает! Отправьте текст на английском для перевода.')
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -60,7 +49,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Пытаемся перевести текст
     try:
-        # Простая проверка на английский язык
         translated = translate_text(message.text)
         if translated and translated != message.text:
             reply = f"🔤 Перевод:\n{translated}"
@@ -68,54 +56,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Ошибка: {e}")
 
-# Обработчик команды /setad
-async def set_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id == ADMIN_ID:
-        global ADVERTISEMENT
-        new_ad = " ".join(context.args)
-        if new_ad:
-            ADVERTISEMENT = new_ad
-            await update.message.reply_text("✅ Рекламный текст обновлен!")
-        else:
-            await update.message.reply_text("❌ Укажите текст: /setad Ваш текст")
-    else:
-        await update.message.reply_text("🚫 Только администратор может менять рекламу")
-
-# Рассылка рекламы
-async def send_advertisement(context: ContextTypes.DEFAULT_TYPE):
-    for chat_id in active_chats:
-        try:
-            await context.bot.send_message(chat_id=chat_id, text=ADVERTISEMENT)
-        except Exception as e:
-            logger.error(f"Ошибка рассылки в чат {chat_id}: {e}")
-
-# Обработчик для отслеживания чатов
-async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    if chat_id not in active_chats:
-        active_chats.add(chat_id)
-        logger.info(f"Добавлен новый чат: {chat_id}")
-
-# Главная функция
-def main():
-    # Создаем приложение с поддержкой JobQueue
+# Создаем и настраиваем приложение бота
+def setup_bot():
     application = Application.builder().token(TOKEN).build()
     
     # Регистрируем обработчики
-    application.add_handler(CommandHandler("setad", set_ad))
+    application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.ALL, track_chats))
     
-    # Запускаем планировщик рекламы (каждые 2 часа)
-    job_queue = application.job_queue
-    if job_queue:
-        job_queue.run_repeating(send_advertisement, interval=7200, first=10)
-    else:
-        logger.warning("JobQueue не доступен. Рекламная рассылка отключена.")
-    
-    # Запускаем бота
-    logger.info("Бот запускается...")
-    application.run_polling()
+    return application
 
+# Маршрут для проверки работоспособности
+@app.route('/')
+def home():
+    return "Telegram Bot is running!"
+
+# Запуск бота
+async def main():
+    application = setup_bot()
+    await application.run_polling()
+
+# Запуск Flask приложения
 if __name__ == '__main__':
-    main()
+    # Запускаем бота в фоновом режиме
+    import threading
+    thread = threading.Thread(target=lambda: asyncio.run(main()))
+    thread.daemon = True
+    thread.start()
+    
+    # Запускаем Flask
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
